@@ -11,7 +11,9 @@ from ecommerce_scraper.http_client import TargetAccessError
 from ecommerce_scraper.models import (
     CategoryNode,
     CategoryResult,
+    CategoryVisibility,
     ExtractionSource,
+    ExtractionStrategy,
     Product,
     ScrapeRequest,
 )
@@ -39,6 +41,8 @@ def _minor_price(value: Any, minor_unit: int) -> str | None:
 
 
 class WooCommerceAdapter(Adapter):
+    strategy = ExtractionStrategy.WOOCOMMERCE_API
+
     async def _paged(self, base_url: str, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         output: list[dict[str, Any]] = []
         for page in range(1, 1_001):
@@ -141,6 +145,7 @@ class WooCommerceAdapter(Adapter):
                     name=name,
                     url=canonicalize_url(urljoin(base_url, f"/product-category/{category.get('slug', '')}")),
                     path=paths.get(category_id, [name]),
+                    visibility=CategoryVisibility.PLATFORM_API,
                     discovered_product_count=len(products),
                     products=[
                         self._normalize_product(item, paths.get(category_id, [name]), base_url)

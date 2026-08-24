@@ -174,6 +174,15 @@ def _sitemap_locations(content: bytes) -> tuple[list[str], list[str]]:
     return locations, []
 
 
+def _sitemap_priority(url: str) -> tuple[int, str]:
+    path = urlsplit(url).path.lower()
+    if "collection" in path or "categor" in path:
+        return (0, url)
+    if "product" in path:
+        return (2, url)
+    return (1, url)
+
+
 async def discover_sitemaps(
     client: SafeHttpClient, base_url: str, max_urls: int
 ) -> SitemapInventory:
@@ -214,7 +223,10 @@ async def discover_sitemaps(
             raise
         except Exception:
             continue
-        candidates.extend(child_sitemaps)
+        # Category sitemaps are normally much smaller and are required to classify
+        # storefront-visible collections. Process them before very large product
+        # sitemaps consume the configured URL budget.
+        candidates.extend(sorted(child_sitemaps, key=_sitemap_priority))
         for url in urls:
             if len(all_urls) >= max_urls:
                 break

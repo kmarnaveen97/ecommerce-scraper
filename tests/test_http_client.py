@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gzip
+
 import httpx
 import pytest
 
@@ -10,6 +12,7 @@ from ecommerce_scraper.http_client import (
     TargetBlockedError,
 )
 from ecommerce_scraper.models import AccessEventKind
+from ecommerce_scraper.security import UnsafeUrlError
 
 
 def _settings(**overrides: object) -> Settings:
@@ -92,9 +95,7 @@ async def test_robots_denial_prevents_target_request_and_applies_crawl_delay() -
         return httpx.Response(200, text="should not be fetched", request=request)
 
     transport = httpx.MockTransport(handler)
-    async with SafeHttpClient(
-        _settings(robots_obey=True), transport=transport, resolve_dns=False
-    ) as client:
+    async with SafeHttpClient(_settings(robots_obey=True), transport=transport, resolve_dns=False) as client:
         await client.load_robots_policy("https://shop.example")
         with pytest.raises(RobotsDeniedError) as caught:
             await client.get("https://shop.example/private/catalog")
@@ -105,3 +106,48 @@ async def test_robots_denial_prevents_target_request_and_applies_crawl_delay() -
     assert report.robots_denied == 1
     assert report.effective_min_interval_seconds == 2
     assert report.events[0].kind == AccessEventKind.ROBOTS_DENIED
+
+
+async def test_streamed_compressed_response_is_not_decompressed_twice() -> None:
+    compressed = gzip.compress(b'{"ok": true}')
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Encoding": "gzip", "Content-Length": str(len(compressed))},
+            content=compressed,
+            request=request,
+        )
+
+    async with SafeHttpClient(
+        _settings(robots_obey=False),
+        transport=httpx.MockTransport(handler),
+        resolve_dns=False,
+    ) as client:
+        response = await client.get("https://shop.example/collections.json")
+
+    assert response.json() == {"ok": True}
+    assert "content-encoding" not in response.headers
+
+
+async def test_private_redirect_is_rejected_when_proxy_dns_mode_is_enabled() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            302,
+            headers={"Location": "http://127.0.0.1/private"},
+            request=request,
+        )
+
+    async with SafeHttpClient(
+        _settings(robots_obey=False),
+        transport=httpx.MockTransport(handler),
+        resolve_dns=False,
+    ) as client:
+        with pytest.raises(UnsafeUrlError):
+            await client.get("https://shop.example")
+
+    assert calls == 1

@@ -22,6 +22,21 @@ class ExtractionSource(StrEnum):
     DOM = "dom"
 
 
+class ExtractionStrategy(StrEnum):
+    SHOPIFY_JSON = "shopify_json"
+    SHOPIFY_SITEMAP = "shopify_sitemap"
+    WOOCOMMERCE_API = "woocommerce_api"
+    GENERIC_HTML = "generic_html"
+
+
+class CategoryVisibility(StrEnum):
+    NAVIGATION = "navigation"
+    SITEMAP = "sitemap"
+    API_ONLY = "api_only"
+    PLATFORM_API = "platform_api"
+    SYNTHETIC = "synthetic"
+
+
 class AccessEventKind(StrEnum):
     RATE_LIMITED = "rate_limited"
     BOT_CHALLENGE = "bot_challenge"
@@ -99,6 +114,7 @@ class CategoryResult(BaseModel):
     name: str
     url: str | None = None
     path: list[str] = Field(default_factory=list)
+    visibility: CategoryVisibility = CategoryVisibility.SYNTHETIC
     discovered_product_count: int = 0
     products: list[Product] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -111,6 +127,7 @@ class ScrapeRequest(BaseModel):
     max_categories: int = Field(default=500, ge=1, le=2_000)
     max_sitemap_urls: int = Field(default=50_000, ge=100, le=500_000)
     max_pages_per_category: int = Field(default=25, ge=1, le=200)
+    include_api_only_collections: bool = False
 
     @field_validator("url")
     @classmethod
@@ -123,6 +140,7 @@ class ScrapeRequest(BaseModel):
 class ScrapeResult(BaseModel):
     site_url: str
     platform: Platform
+    extraction_strategy: ExtractionStrategy = ExtractionStrategy.GENERIC_HTML
     category_tree: list[CategoryNode] = Field(default_factory=list)
     categories: list[CategoryResult] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

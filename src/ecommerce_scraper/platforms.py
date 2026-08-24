@@ -18,7 +18,17 @@ def detect_platform(response: httpx.Response) -> PlatformDetection:
     combined = f"{headers}\n{html[:1_000_000]}"
 
     signatures: list[tuple[Platform, tuple[str, ...]]] = [
-        (Platform.SHOPIFY, ("cdn.shopify.com", "shopify.theme", "shopify-section", "x-shopid")),
+        (
+            Platform.SHOPIFY,
+            (
+                "cdn.shopify.com",
+                "shopify.theme",
+                "shopify-section",
+                "x-shopid",
+                "myshopify.com",
+                "/cdn/shop/",
+            ),
+        ),
         (Platform.WOOCOMMERCE, ("woocommerce", "wp-content/plugins/woocommerce", "wc-block-")),
         (Platform.MAGENTO, ("magento_", "x-magento", "mage/cookies", "static/version")),
         (Platform.BIGCOMMERCE, ("stencil-utils", "cdn11.bigcommerce.com", "bigcommerce")),
@@ -31,4 +41,3 @@ def detect_platform(response: httpx.Response) -> PlatformDetection:
     if score == 0:
         return PlatformDetection(Platform.GENERIC, 0.35, ())
     return PlatformDetection(platform, min(0.55 + score * 0.12, 0.99), signals)
-

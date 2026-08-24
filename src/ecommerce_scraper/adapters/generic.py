@@ -14,12 +14,21 @@ from ecommerce_scraper.discovery import (
 )
 from ecommerce_scraper.extractors import extract_product
 from ecommerce_scraper.http_client import RobotsDeniedError, TargetAccessError
-from ecommerce_scraper.models import CategoryNode, CategoryResult, Product, ScrapeRequest
+from ecommerce_scraper.models import (
+    CategoryNode,
+    CategoryResult,
+    CategoryVisibility,
+    ExtractionStrategy,
+    Product,
+    ScrapeRequest,
+)
 from ecommerce_scraper.sampling import deterministic_sample
 from ecommerce_scraper.security import canonicalize_url
 
 
 class GenericAdapter(Adapter):
+    strategy = ExtractionStrategy.GENERIC_HTML
+
     async def _category_products(
         self, category_url: str, max_pages: int
     ) -> tuple[list[str], list[str]]:
@@ -114,6 +123,7 @@ class GenericAdapter(Adapter):
                     name=category.name,
                     url=category.url,
                     path=category.path,
+                    visibility=CategoryVisibility.NAVIGATION,
                     discovered_product_count=len(product_urls),
                     products=products,
                     warnings=[*category_warnings, *product_warnings],
@@ -131,6 +141,7 @@ class GenericAdapter(Adapter):
                 CategoryResult(
                     name="All Products",
                     path=["All Products"],
+                    visibility=CategoryVisibility.SYNTHETIC,
                     discovered_product_count=len(inventory.product_urls),
                     products=products,
                     warnings=product_warnings,

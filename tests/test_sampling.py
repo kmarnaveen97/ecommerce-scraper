@@ -16,4 +16,3 @@ def test_sample_is_deterministic_and_does_not_modify_input() -> None:
 
 def test_sample_returns_all_unique_values_when_under_limit() -> None:
     assert deterministic_sample([1, 1, 2], 10, "seed") == [1, 2]
-

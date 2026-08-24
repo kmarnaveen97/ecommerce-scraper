@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from ecommerce_scraper.adapters import GenericAdapter, ShopifyAdapter, WooCommerceAdapter
+from ecommerce_scraper.adapters import (
+    GenericAdapter,
+    ShopifyAdapter,
+    WooCommerceAdapter,
+    probe_shopify,
+)
 from ecommerce_scraper.adapters.base import Adapter
 from ecommerce_scraper.config import Settings
 from ecommerce_scraper.discovery import discover_navigation_tree
@@ -21,7 +26,10 @@ class ScrapeService:
         base_url = normalize_url(request.url)
         validate_hostname_syntax(base_url)
 
-        async with SafeHttpClient(self.settings) as client:
+        async with SafeHttpClient(
+            self.settings,
+            resolve_dns=self.settings.http_validate_dns,
+        ) as client:
             robots_warning = await client.load_robots_policy(base_url)
             homepage = await client.get(base_url)
             homepage.raise_for_status()
@@ -34,9 +42,19 @@ class ScrapeService:
             if robots_warning:
                 warnings.append(robots_warning)
 
+            effective_platform = detection.platform
+            shopify_probe = None
+            if detection.platform in {Platform.SHOPIFY, Platform.GENERIC}:
+                shopify_probe = await probe_shopify(client, final_url)
+                if shopify_probe.json_available and detection.platform != Platform.SHOPIFY:
+                    effective_platform = Platform.SHOPIFY
+                    warnings.append(
+                        "Public Shopify catalogue APIs were detected behind a custom/headless theme"
+                    )
+
             adapter: Adapter
-            if detection.platform == Platform.SHOPIFY:
-                adapter = ShopifyAdapter(client)
+            if effective_platform == Platform.SHOPIFY:
+                adapter = ShopifyAdapter(client, shopify_probe)
             elif detection.platform == Platform.WOOCOMMERCE:
                 adapter = WooCommerceAdapter(client)
             else:
@@ -54,17 +72,17 @@ class ScrapeService:
                 if isinstance(adapter, GenericAdapter):
                     raise
                 warnings.append(
-                    f"{detection.platform.value} API adapter failed ({exc}); generic discovery was used"
+                    f"{effective_platform.value} adapter failed ({exc}); generic discovery was used"
                 )
-                categories, adapter_warnings = await GenericAdapter(client).scrape(
-                    final_url, request, navigation
-                )
+                adapter = GenericAdapter(client)
+                categories, adapter_warnings = await adapter.scrape(final_url, request, navigation)
             warnings.extend(adapter_warnings)
             access_report = client.access_report()
 
         return ScrapeResult(
             site_url=final_url,
-            platform=detection.platform,
+            platform=effective_platform,
+            extraction_strategy=adapter.strategy,
             category_tree=navigation,
             categories=categories,
             warnings=warnings,

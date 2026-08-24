@@ -6,7 +6,10 @@ API-first service that accepts a public e-commerce URL, discovers its category h
 
 ## What works now
 
-- Shopify detection and collection/product JSON API extraction
+- Shopify capability probing instead of theme-signature assumptions
+- Shopify collection/product JSON extraction with sitemap/HTML fallback
+- Headless Shopify detection when public catalogue APIs are exposed
+- Storefront-visible, sitemap-only and API-only collection classification
 - WooCommerce detection and public Store API extraction
 - Generic navigation and mega-menu hierarchy discovery
 - Recursive `robots.txt`, sitemap index, sitemap and gzip sitemap processing
@@ -33,13 +36,13 @@ POST /api/v1/jobs
 URL validation + safe HTTP client
         |
         v
-Platform detector
-   |         |            |
-Shopify  WooCommerce   Generic
-   |         |            |
-Public APIs       Navigation + sitemaps
-   |                      |
-   +----------+-----------+
+Platform + capability probe
+   |              |              |
+Shopify JSON  Shopify fallback  Generic
+   |              |              |
+Public APIs   Sitemap + HTML   Navigation + sitemaps
+   |              |              |
+   +--------------+--------------+
               v
      Category/product mapping
               |
@@ -116,6 +119,7 @@ curl http://localhost:8000/api/v1/jobs/JOB_ID/result
 | `max_categories` | `500` | Safety limit for category processing |
 | `max_sitemap_urls` | `50000` | Safety limit for discovered sitemap URLs |
 | `max_pages_per_category` | `25` | Pagination limit per generic category |
+| `include_api_only_collections` | `false` | Include public Shopify collections absent from navigation and collection sitemaps |
 
 ## Output fields
 
@@ -132,6 +136,10 @@ Every product can contain:
 - Product specifications
 - Variants and option values
 - Extraction sources and confidence score
+
+The result reports the selected `extraction_strategy` (`shopify_json`,
+`shopify_sitemap`, `woocommerce_api` or `generic_html`). Each category also has a
+`visibility` value: `navigation`, `sitemap`, `api_only`, `platform_api` or `synthetic`.
 
 Every completed result also includes an `access_report` with request and retry totals,
 rate-limit and block counts, the effective request interval, circuit state and up to 100
@@ -154,10 +162,12 @@ The defaults are intentionally conservative and can be tuned through environment
 | `TARGET_BLOCK_THRESHOLD` | `3` | Repeated block signals needed to open the circuit |
 | `TARGET_CIRCUIT_BREAK_SECONDS` | `300` | Circuit cool-down period |
 | `ROBOTS_OBEY` | `true` | Enforce `robots.txt` rules and pacing directives |
+| `HTTP_VALIDATE_DNS` | `true` | Reject hostnames resolving to private/reserved IPs; disable only behind a trusted egress proxy that performs equivalent SSRF filtering |
 
 A response identified as a bot challenge or access denial is not retried. The job stops
 and reports the detected provider and URL. The scraper does not solve CAPTCHAs, spoof
 browser fingerprints, rotate proxies, or otherwise evade the target's access controls.
+Direct private IPs and local hostnames remain invalid regardless of `HTTP_VALIDATE_DNS`.
 
 ## Project layout
 
@@ -165,7 +175,7 @@ browser fingerprints, rotate proxies, or otherwise evade the target's access con
 src/ecommerce_scraper/
 ├── adapters/
 │   ├── generic.py
-│   ├── shopify.py
+│   ├── shopify.py  # probe + JSON router + sitemap/HTML fallback
 │   └── woocommerce.py
 ├── api.py
 ├── config.py
@@ -185,17 +195,20 @@ src/ecommerce_scraper/
 - “All categories” means categories discoverable through public navigation, sitemaps or supported public platform APIs.
 - Generic category-to-product mapping is based on category pages and pagination. Sites that only load products through private APIs need a dedicated adapter.
 - Shopify collections are flat in the public JSON API; navigation paths are used when available to recover hierarchy.
+- API-only Shopify collections are excluded by default when navigation or collection-sitemap visibility evidence exists. Set `include_api_only_collections=true` for catalogue audits.
+- If Shopify JSON is disabled, the worker discovers collections through navigation and sitemaps, extracts public product links from collection HTML, then normalizes JSON-LD/DOM product data.
+- A JavaScript-only collection with no public catalogue JSON or server-rendered product links is reported as requiring a store-specific renderer; the service does not disguise browser automation or bypass a challenge.
 - An in-memory job manager is used in this MVP. Replace it with Redis/PostgreSQL before running multiple API replicas.
 - Browser-rendered pages are the next adapter layer; the current MVP deliberately starts with cheaper HTTP and structured-data extraction.
 
 ## Next milestones
 
-1. Playwright/Scrapling browser fallback for JavaScript-only category pages
-2. Magento and BigCommerce adapters
-3. Redis-backed durable job queue
-4. PostgreSQL run history and CSV/XLSX export
-5. Next.js dashboard with progress and download controls
-6. Per-domain adapter configuration and extraction quality reports
+1. Rate-controlled browser renderer for authorized JavaScript-only category pages
+2. Per-domain adapter registry for non-standard/headless storefront APIs
+3. Magento and BigCommerce adapters
+4. Redis-backed durable job queue and resumable collection checkpoints
+5. PostgreSQL run history and CSV/XLSX export
+6. Next.js dashboard with progress and download controls
 
 ## Responsible use
 

@@ -19,7 +19,12 @@ from ecommerce_scraper.models import (
     TargetAccessEvent,
     TargetAccessReport,
 )
-from ecommerce_scraper.security import UnsafeUrlError, normalize_url, validate_resolved_host
+from ecommerce_scraper.security import (
+    UnsafeUrlError,
+    normalize_url,
+    validate_hostname_syntax,
+    validate_resolved_host,
+)
 
 
 class ResponseTooLargeError(RuntimeError):
@@ -282,6 +287,7 @@ class SafeHttpClient:
         self._check_circuit(url, state)
         if respect_robots:
             self._check_robots(url, state)
+        validate_hostname_syntax(url)
         if self._resolve_dns:
             await asyncio.to_thread(validate_resolved_host, url)
         await self._schedule_request(state)
@@ -314,10 +320,16 @@ class SafeHttpClient:
                             )
                         chunks.append(chunk)
 
+                    # httpx has already decoded gzip/br/deflate while iterating bytes.
+                    # Keeping the original encoding metadata would make the reconstructed
+                    # response attempt to decompress the decoded body a second time.
+                    decoded_headers = response.headers.copy()
+                    decoded_headers.pop("content-encoding", None)
+                    decoded_headers.pop("content-length", None)
                     return (
                         httpx.Response(
                             status_code=response.status_code,
-                            headers=response.headers,
+                            headers=decoded_headers,
                             content=b"".join(chunks),
                             request=response.request,
                             extensions=response.extensions,

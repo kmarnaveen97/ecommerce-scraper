@@ -46,4 +46,3 @@ def test_extracts_product_and_breadcrumb_json_ld() -> None:
     assert product.brand == "Emori"
     assert product.images == ["https://shop.example/images/ring.jpg"]
     assert product.sources == [ExtractionSource.JSON_LD]
-

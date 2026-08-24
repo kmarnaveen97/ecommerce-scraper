@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = 25.0
     http_max_redirects: int = 5
     http_max_response_bytes: int = 10_000_000
+    http_validate_dns: bool = True
     http_user_agent: str = (
         "EcommerceDiscoveryBot/0.1 (+https://github.com/kmarnaveen97/ecommerce-scraper)"
     )
