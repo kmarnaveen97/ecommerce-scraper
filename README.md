@@ -16,6 +16,11 @@ API-first service that accepts a public e-commerce URL, discovers its category h
 - Variant, price, currency, stock, image, rating and specification normalization
 - Seeded random sampling of up to 10 products per category
 - URL canonicalization, redirect validation, DNS checks and SSRF protection
+- Per-domain concurrency limits, request spacing, jitter and adaptive backoff
+- `robots.txt` allow/disallow, crawl-delay and request-rate enforcement
+- `Retry-After` and common rate-limit header handling with bounded retries
+- Cloudflare, Akamai, DataDome, PerimeterX and Imperva challenge detection
+- Access-event reporting and a circuit breaker for repeated target blocks
 - Asynchronous background jobs with status and result endpoints
 - Docker and GitHub Actions configuration
 
@@ -128,6 +133,32 @@ Every product can contain:
 - Variants and option values
 - Extraction sources and confidence score
 
+Every completed result also includes an `access_report` with request and retry totals,
+rate-limit and block counts, the effective request interval, circuit state and up to 100
+recent target-access events. Failed jobs caused by a target rate limit, challenge, access
+denial or `robots.txt` rule expose the same report on the job resource.
+
+## Target access controls
+
+The defaults are intentionally conservative and can be tuned through environment variables:
+
+| Setting | Default | Behavior |
+|---|---:|---|
+| `TARGET_REQUESTS_PER_SECOND` | `1.0` | Baseline request-start rate for each origin |
+| `TARGET_MAX_CONCURRENCY_PER_HOST` | `2` | Maximum simultaneous requests to one origin |
+| `TARGET_JITTER_SECONDS` | `0.25` | Random extra delay between request starts |
+| `TARGET_MAX_RETRIES` | `3` | Retry limit for `429`, `502`, `503` and `504` |
+| `TARGET_BACKOFF_BASE_SECONDS` | `1` | Initial exponential-backoff delay |
+| `TARGET_BACKOFF_CAP_SECONDS` | `30` | Maximum local backoff and adaptive interval |
+| `TARGET_MAX_RETRY_AFTER_SECONDS` | `120` | Fail instead of waiting beyond this server delay |
+| `TARGET_BLOCK_THRESHOLD` | `3` | Repeated block signals needed to open the circuit |
+| `TARGET_CIRCUIT_BREAK_SECONDS` | `300` | Circuit cool-down period |
+| `ROBOTS_OBEY` | `true` | Enforce `robots.txt` rules and pacing directives |
+
+A response identified as a bot challenge or access denial is not retried. The job stops
+and reports the detected provider and URL. The scraper does not solve CAPTCHAs, spoof
+browser fingerprints, rotate proxies, or otherwise evade the target's access controls.
+
 ## Project layout
 
 ```text
@@ -169,4 +200,3 @@ src/ecommerce_scraper/
 ## Responsible use
 
 Run the service only on websites you are authorized to access. Respect terms of service, `robots.txt`, copyright, privacy obligations, crawl delays and applicable laws. Do not use it to bypass authentication or technical access controls.
-

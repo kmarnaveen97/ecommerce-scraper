@@ -7,6 +7,7 @@ from urllib.parse import urlencode, urljoin
 from bs4 import BeautifulSoup
 
 from ecommerce_scraper.adapters.base import Adapter
+from ecommerce_scraper.http_client import TargetAccessError
 from ecommerce_scraper.models import (
     CategoryNode,
     CategoryResult,
@@ -125,6 +126,8 @@ class WooCommerceAdapter(Adapter):
                 products = await self._paged(
                     base_url, "/wp-json/wc/store/v1/products", {"category": category_id}
                 )
+            except TargetAccessError:
+                raise
             except Exception as exc:
                 warnings.append(f"Category {name!r} could not be read: {exc}")
                 continue

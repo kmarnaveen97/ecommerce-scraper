@@ -22,6 +22,35 @@ class ExtractionSource(StrEnum):
     DOM = "dom"
 
 
+class AccessEventKind(StrEnum):
+    RATE_LIMITED = "rate_limited"
+    BOT_CHALLENGE = "bot_challenge"
+    ACCESS_DENIED = "access_denied"
+    TRANSIENT_ERROR = "transient_error"
+    ROBOTS_DENIED = "robots_denied"
+
+
+class TargetAccessEvent(BaseModel):
+    kind: AccessEventKind
+    url: str
+    status_code: int | None = None
+    provider: str | None = None
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    retry_after_seconds: float | None = Field(default=None, ge=0)
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class TargetAccessReport(BaseModel):
+    total_requests: int = 0
+    retries: int = 0
+    rate_limited_responses: int = 0
+    block_events: int = 0
+    robots_denied: int = 0
+    effective_min_interval_seconds: float = 0.0
+    circuit_open: bool = False
+    events: list[TargetAccessEvent] = Field(default_factory=list)
+
+
 class ProductVariant(BaseModel):
     id: str | None = None
     title: str | None = None
@@ -97,6 +126,7 @@ class ScrapeResult(BaseModel):
     category_tree: list[CategoryNode] = Field(default_factory=list)
     categories: list[CategoryResult] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    access_report: TargetAccessReport = Field(default_factory=TargetAccessReport)
     started_at: datetime
     completed_at: datetime
 
@@ -114,6 +144,7 @@ class Job(BaseModel):
     request: ScrapeRequest
     result: ScrapeResult | None = None
     error: str | None = None
+    access_report: TargetAccessReport | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

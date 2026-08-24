@@ -6,7 +6,7 @@ from ecommerce_scraper.adapters import GenericAdapter, ShopifyAdapter, WooCommer
 from ecommerce_scraper.adapters.base import Adapter
 from ecommerce_scraper.config import Settings
 from ecommerce_scraper.discovery import discover_navigation_tree
-from ecommerce_scraper.http_client import SafeHttpClient
+from ecommerce_scraper.http_client import SafeHttpClient, TargetAccessError
 from ecommerce_scraper.models import Platform, ScrapeRequest, ScrapeResult
 from ecommerce_scraper.platforms import detect_platform
 from ecommerce_scraper.security import normalize_url, validate_hostname_syntax
@@ -22,6 +22,7 @@ class ScrapeService:
         validate_hostname_syntax(base_url)
 
         async with SafeHttpClient(self.settings) as client:
+            robots_warning = await client.load_robots_policy(base_url)
             homepage = await client.get(base_url)
             homepage.raise_for_status()
             final_url = normalize_url(str(homepage.url))
@@ -30,6 +31,8 @@ class ScrapeService:
             warnings = [
                 f"Platform detection confidence: {detection.confidence:.0%}",
             ]
+            if robots_warning:
+                warnings.append(robots_warning)
 
             adapter: Adapter
             if detection.platform == Platform.SHOPIFY:
@@ -45,6 +48,8 @@ class ScrapeService:
 
             try:
                 categories, adapter_warnings = await adapter.scrape(final_url, request, navigation)
+            except TargetAccessError:
+                raise
             except Exception as exc:
                 if isinstance(adapter, GenericAdapter):
                     raise
@@ -55,6 +60,7 @@ class ScrapeService:
                     final_url, request, navigation
                 )
             warnings.extend(adapter_warnings)
+            access_report = client.access_report()
 
         return ScrapeResult(
             site_url=final_url,
@@ -62,6 +68,7 @@ class ScrapeService:
             category_tree=navigation,
             categories=categories,
             warnings=warnings,
+            access_report=access_report,
             started_at=started_at,
             completed_at=datetime.now(UTC),
         )

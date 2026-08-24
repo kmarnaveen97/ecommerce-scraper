@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from ecommerce_scraper.http_client import TargetAccessError
 from ecommerce_scraper.models import Job, JobState, ScrapeRequest
 from ecommerce_scraper.service import ScrapeService
 
@@ -46,6 +47,8 @@ class InMemoryJobManager:
                 job = self._jobs[job_id]
                 job.state = JobState.FAILED
                 job.error = f"{type(exc).__name__}: {exc}"
+                if isinstance(exc, TargetAccessError):
+                    job.access_report = exc.report
                 job.updated_at = datetime.now(UTC)
             return
         async with self._lock:
@@ -53,4 +56,3 @@ class InMemoryJobManager:
             job.state = JobState.COMPLETED
             job.result = result
             job.updated_at = datetime.now(UTC)
-

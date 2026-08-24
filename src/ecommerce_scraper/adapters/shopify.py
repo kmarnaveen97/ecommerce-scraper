@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from ecommerce_scraper.adapters.base import Adapter
 from ecommerce_scraper.discovery import flatten_categories
+from ecommerce_scraper.http_client import TargetAccessError
 from ecommerce_scraper.models import (
     CategoryNode,
     CategoryResult,
@@ -139,6 +140,8 @@ class ShopifyAdapter(Adapter):
             category_path = paths.get(collection_path, [title])
             try:
                 products = await self._products(base_url, handle)
+            except TargetAccessError:
+                raise
             except Exception as exc:
                 warnings.append(f"Collection {title!r} could not be read: {exc}")
                 continue

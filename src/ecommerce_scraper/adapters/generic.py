@@ -13,6 +13,7 @@ from ecommerce_scraper.discovery import (
     flatten_categories,
 )
 from ecommerce_scraper.extractors import extract_product
+from ecommerce_scraper.http_client import RobotsDeniedError, TargetAccessError
 from ecommerce_scraper.models import CategoryNode, CategoryResult, Product, ScrapeRequest
 from ecommerce_scraper.sampling import deterministic_sample
 from ecommerce_scraper.security import canonicalize_url
@@ -34,6 +35,11 @@ class GenericAdapter(Adapter):
             try:
                 response = await self.client.get(page_url)
                 response.raise_for_status()
+            except RobotsDeniedError as exc:
+                warnings.append(str(exc))
+                continue
+            except TargetAccessError:
+                raise
             except Exception as exc:
                 warnings.append(f"Category page could not be read ({page_url}): {exc}")
                 continue
@@ -53,6 +59,11 @@ class GenericAdapter(Adapter):
                 response = await self.client.get(url)
                 response.raise_for_status()
                 return extract_product(response.text, str(response.url), path)
+            except RobotsDeniedError as exc:
+                warnings.append(str(exc))
+                return None
+            except TargetAccessError:
+                raise
             except Exception as exc:
                 warnings.append(f"Product could not be extracted ({url}): {exc}")
                 return None

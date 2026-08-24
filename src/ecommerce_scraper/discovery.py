@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup, Tag
 from lxml import etree
 
-from ecommerce_scraper.http_client import SafeHttpClient
+from ecommerce_scraper.http_client import RobotsDeniedError, SafeHttpClient, TargetAccessError
 from ecommerce_scraper.models import CategoryNode
 from ecommerce_scraper.security import UnsafeUrlError, canonicalize_url, same_site
 
@@ -181,14 +181,19 @@ async def discover_sitemaps(
     candidates: deque[str] = deque()
     visited_sitemaps: set[str] = set()
     robots_url = urljoin(base_url, "/robots.txt")
-    try:
-        robots = await client.get(robots_url)
-        if robots.is_success:
-            for line in robots.text.splitlines():
-                if line.lower().startswith("sitemap:"):
-                    candidates.append(urljoin(base_url, line.split(":", 1)[1].strip()))
-    except Exception as exc:
-        inventory.warnings.append(f"robots.txt could not be read: {exc}")
+    robots_text = client.get_cached_robots_text(base_url)
+    if robots_text is None:
+        try:
+            robots = await client.get(robots_url, respect_robots=False)
+            robots_text = robots.text if robots.is_success else None
+        except TargetAccessError:
+            raise
+        except Exception as exc:
+            inventory.warnings.append(f"robots.txt could not be read: {exc}")
+    if robots_text:
+        for line in robots_text.splitlines():
+            if line.lower().startswith("sitemap:"):
+                candidates.append(urljoin(base_url, line.split(":", 1)[1].strip()))
     candidates.extend([urljoin(base_url, "/sitemap.xml"), urljoin(base_url, "/sitemap_index.xml")])
 
     all_urls: set[str] = set()
@@ -202,6 +207,11 @@ async def discover_sitemaps(
             if not response.is_success:
                 continue
             urls, child_sitemaps = _sitemap_locations(response.content)
+        except RobotsDeniedError as exc:
+            inventory.warnings.append(str(exc))
+            continue
+        except TargetAccessError:
+            raise
         except Exception:
             continue
         candidates.extend(child_sitemaps)
