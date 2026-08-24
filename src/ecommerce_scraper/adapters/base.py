@@ -14,6 +14,7 @@ class Adapter(ABC):
 
     def __init__(self, client: SafeHttpClient) -> None:
         self.client = client
+        self.category_tree: list[CategoryNode] = []
 
     @abstractmethod
     async def scrape(

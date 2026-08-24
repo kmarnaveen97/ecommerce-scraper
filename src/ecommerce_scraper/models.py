@@ -26,6 +26,7 @@ class ExtractionStrategy(StrEnum):
     SHOPIFY_JSON = "shopify_json"
     SHOPIFY_SITEMAP = "shopify_sitemap"
     WOOCOMMERCE_API = "woocommerce_api"
+    MAGENTO_GRAPHQL = "magento_graphql"
     GENERIC_HTML = "generic_html"
 
 

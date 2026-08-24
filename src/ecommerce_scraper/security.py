@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 
 class UnsafeUrlError(ValueError):
@@ -11,6 +11,40 @@ class UnsafeUrlError(ValueError):
 
 _BLOCKED_HOSTS = {"localhost", "localhost.localdomain", "metadata.google.internal"}
 _TRACKING_PREFIXES = ("utm_", "fbclid", "gclid", "mc_")
+_ASSET_EXTENSIONS = {
+    ".avif",
+    ".avi",
+    ".bmp",
+    ".css",
+    ".eot",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".js",
+    ".json",
+    ".m4a",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".ogg",
+    ".pdf",
+    ".png",
+    ".svg",
+    ".tar",
+    ".tif",
+    ".tiff",
+    ".ttf",
+    ".wav",
+    ".webm",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".xml",
+    ".zip",
+}
+_ASSET_PATH_PREFIXES = ("/media/catalog/product/",)
 
 
 def normalize_url(value: str) -> str:
@@ -41,6 +75,15 @@ def canonicalize_url(value: str) -> str:
     ]
     path = parsed.path.rstrip("/") or "/"
     return urlunsplit((parsed.scheme, parsed.netloc.lower(), path, urlencode(sorted(query)), ""))
+
+
+def is_asset_url(value: str) -> bool:
+    """Return true for static assets that must never be treated as product pages."""
+    path = unquote(urlsplit(value).path).lower()
+    if any(path.startswith(prefix) for prefix in _ASSET_PATH_PREFIXES):
+        return True
+    final_segment = path.rsplit("/", 1)[-1]
+    return any(final_segment.endswith(extension) for extension in _ASSET_EXTENSIONS)
 
 
 def is_public_ip(address: str) -> bool:

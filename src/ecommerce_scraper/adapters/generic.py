@@ -12,7 +12,7 @@ from ecommerce_scraper.discovery import (
     extract_product_links,
     flatten_categories,
 )
-from ecommerce_scraper.extractors import extract_product
+from ecommerce_scraper.extractors import ProductEvidenceError, extract_product
 from ecommerce_scraper.http_client import RobotsDeniedError, TargetAccessError
 from ecommerce_scraper.models import (
     CategoryNode,
@@ -23,7 +23,19 @@ from ecommerce_scraper.models import (
     ScrapeRequest,
 )
 from ecommerce_scraper.sampling import deterministic_sample
-from ecommerce_scraper.security import canonicalize_url
+from ecommerce_scraper.security import canonicalize_url, is_asset_url
+
+
+def _is_html_response(content_type: str | None, content: bytes) -> bool:
+    prefix = content.lstrip()[:100].lower()
+    looks_like_html = prefix.startswith((b"<!doctype html", b"<html"))
+    if content_type:
+        media_type = content_type.split(";", 1)[0].strip().lower()
+        if media_type in {"text/html", "application/xhtml+xml"}:
+            return True
+        # httpx MockTransport and a few misconfigured storefronts label HTML as text/plain.
+        return media_type == "text/plain" and looks_like_html
+    return looks_like_html
 
 
 class GenericAdapter(Adapter):
@@ -44,6 +56,9 @@ class GenericAdapter(Adapter):
             try:
                 response = await self.client.get(page_url)
                 response.raise_for_status()
+                if not _is_html_response(response.headers.get("content-type"), response.content):
+                    warnings.append(f"Category URL did not return HTML: {page_url}")
+                    continue
             except RobotsDeniedError as exc:
                 warnings.append(str(exc))
                 continue
@@ -64,10 +79,19 @@ class GenericAdapter(Adapter):
         warnings: list[str] = []
 
         async def one(url: str) -> Product | None:
+            if is_asset_url(url):
+                warnings.append(f"Asset URL was rejected as a product page: {url}")
+                return None
             try:
                 response = await self.client.get(url)
                 response.raise_for_status()
+                if not _is_html_response(response.headers.get("content-type"), response.content):
+                    warnings.append(f"Product URL did not return HTML: {url}")
+                    return None
                 return extract_product(response.text, str(response.url), path)
+            except ProductEvidenceError as exc:
+                warnings.append(str(exc))
+                return None
             except RobotsDeniedError as exc:
                 warnings.append(str(exc))
                 return None

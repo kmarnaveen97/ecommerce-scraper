@@ -30,7 +30,19 @@ def detect_platform(response: httpx.Response) -> PlatformDetection:
             ),
         ),
         (Platform.WOOCOMMERCE, ("woocommerce", "wp-content/plugins/woocommerce", "wc-block-")),
-        (Platform.MAGENTO, ("magento_", "x-magento", "mage/cookies", "static/version")),
+        (
+            Platform.MAGENTO,
+            (
+                "magento_",
+                "x-magento",
+                "mage/cookies",
+                "static/version",
+                "magento-pwa",
+                "rootcmp_",
+                "venia",
+                "peregrine",
+            ),
+        ),
         (Platform.BIGCOMMERCE, ("stencil-utils", "cdn11.bigcommerce.com", "bigcommerce")),
     ]
     scored: list[tuple[int, Platform, tuple[str, ...]]] = []

@@ -11,7 +11,7 @@ from lxml import etree
 
 from ecommerce_scraper.http_client import RobotsDeniedError, SafeHttpClient, TargetAccessError
 from ecommerce_scraper.models import CategoryNode
-from ecommerce_scraper.security import UnsafeUrlError, canonicalize_url, same_site
+from ecommerce_scraper.security import UnsafeUrlError, canonicalize_url, is_asset_url, same_site
 
 PRODUCT_URL_RE = re.compile(
     r"/(?:products?|product-detail|productdetails?|p|item|dp|pd)(?:/|-)[^/?#]+", re.IGNORECASE
@@ -143,7 +143,11 @@ def extract_product_links(html: str, page_url: str) -> set[str]:
     for selector in selectors:
         for anchor in soup.select(selector):
             target = urljoin(page_url, str(anchor.get("href")))
-            if _is_internal(page_url, target) and PRODUCT_URL_RE.search(urlsplit(target).path):
+            if (
+                _is_internal(page_url, target)
+                and not is_asset_url(target)
+                and PRODUCT_URL_RE.search(urlsplit(target).path)
+            ):
                 links.add(canonicalize_url(target))
     return links
 
@@ -164,11 +168,15 @@ def _sitemap_locations(content: bytes) -> tuple[list[str], list[str]]:
     parser = etree.XMLParser(resolve_entities=False, no_network=True, recover=True, huge_tree=False)
     root = etree.fromstring(content, parser=parser)
     root_name = etree.QName(root.tag).localname.lower()
-    locations = [
-        str(element.text).strip()
-        for element in root.iter()
-        if etree.QName(element.tag).localname.lower() == "loc" and element.text
-    ]
+    locations: list[str] = []
+    for entry in root:
+        entry_name = etree.QName(entry.tag).localname.lower()
+        if entry_name not in {"url", "sitemap"}:
+            continue
+        for child in entry:
+            if etree.QName(child.tag).localname.lower() == "loc" and child.text:
+                locations.append(str(child.text).strip())
+                break
     if root_name == "sitemapindex":
         return [], locations
     return locations, []
@@ -235,7 +243,9 @@ async def discover_sitemaps(
 
     for url in sorted(all_urls):
         path = urlsplit(url).path
-        if PRODUCT_URL_RE.search(path):
+        if is_asset_url(url):
+            inventory.other_urls.append(url)
+        elif PRODUCT_URL_RE.search(path):
             inventory.product_urls.append(url)
         elif CATEGORY_URL_RE.search(path):
             inventory.category_urls.append(url)

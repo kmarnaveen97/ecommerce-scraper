@@ -38,6 +38,25 @@ def test_product_link_extraction_is_canonical() -> None:
     }
 
 
+def test_sitemap_ignores_nested_image_locations() -> None:
+    content = b"""<?xml version='1.0'?>
+    <urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'
+            xmlns:image='http://www.google.com/schemas/sitemap-image/1.1'>
+      <url>
+        <loc>https://shop.example/product/running-shoe.html</loc>
+        <image:image>
+          <image:loc>https://shop.example/media/catalog/product/running-shoe.jpg</image:loc>
+        </image:image>
+      </url>
+    </urlset>
+    """
+
+    urls, child_sitemaps = discovery._sitemap_locations(content)
+
+    assert urls == ["https://shop.example/product/running-shoe.html"]
+    assert child_sitemaps == []
+
+
 async def test_collection_sitemap_is_processed_before_large_product_sitemap() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/sitemap.xml":

@@ -9,13 +9,16 @@ API-first service that accepts a public e-commerce URL, discovers its category h
 - Shopify capability probing instead of theme-signature assumptions
 - Shopify collection/product JSON extraction with sitemap/HTML fallback
 - Headless Shopify detection when public catalogue APIs are exposed
+- Magento/Adobe Commerce GraphQL category and product extraction
+- Headless Magento PWA/Venia detection with public GraphQL capability probing
 - Storefront-visible, sitemap-only and API-only collection classification
 - WooCommerce detection and public Store API extraction
 - Generic navigation and mega-menu hierarchy discovery
 - Recursive `robots.txt`, sitemap index, sitemap and gzip sitemap processing
 - Product and pagination link discovery on category pages
+- Static-asset and sitemap image filtering before product extraction
 - Schema.org `Product`, `Offer`, `BreadcrumbList` and `AggregateRating` extraction
-- DOM fallback for sites with incomplete structured data
+- DOM fallback with minimum product-evidence checks for incomplete structured data
 - Variant, price, currency, stock, image, rating and specification normalization
 - Seeded random sampling of up to 10 products per category
 - URL canonicalization, redirect validation, DNS checks and SSRF protection
@@ -37,12 +40,12 @@ URL validation + safe HTTP client
         |
         v
 Platform + capability probe
-   |              |              |
-Shopify JSON  Shopify fallback  Generic
-   |              |              |
-Public APIs   Sitemap + HTML   Navigation + sitemaps
-   |              |              |
-   +--------------+--------------+
+   |              |              |              |
+Shopify JSON  Shopify fallback  Magento API   Generic
+   |              |              |              |
+Public APIs   Sitemap + HTML   GraphQL API   Navigation + sitemaps
+   |              |              |              |
+   +--------------+--------------+--------------+
               v
      Category/product mapping
               |
@@ -138,8 +141,9 @@ Every product can contain:
 - Extraction sources and confidence score
 
 The result reports the selected `extraction_strategy` (`shopify_json`,
-`shopify_sitemap`, `woocommerce_api` or `generic_html`). Each category also has a
-`visibility` value: `navigation`, `sitemap`, `api_only`, `platform_api` or `synthetic`.
+`shopify_sitemap`, `woocommerce_api`, `magento_graphql` or `generic_html`). Each
+category also has a `visibility` value: `navigation`, `sitemap`, `api_only`,
+`platform_api` or `synthetic`.
 
 Every completed result also includes an `access_report` with request and retry totals,
 rate-limit and block counts, the effective request interval, circuit state and up to 100
@@ -175,6 +179,7 @@ Direct private IPs and local hostnames remain invalid regardless of `HTTP_VALIDA
 src/ecommerce_scraper/
 ├── adapters/
 │   ├── generic.py
+│   ├── magento.py  # GraphQL probe + categories, products and variants
 │   ├── shopify.py  # probe + JSON router + sitemap/HTML fallback
 │   └── woocommerce.py
 ├── api.py
@@ -194,6 +199,7 @@ src/ecommerce_scraper/
 
 - “All categories” means categories discoverable through public navigation, sitemaps or supported public platform APIs.
 - Generic category-to-product mapping is based on category pages and pagination. Sites that only load products through private APIs need a dedicated adapter.
+- Magento/Adobe Commerce stores are supported when their public storefront GraphQL exposes `storeConfig`, `categoryList` and `products`. Schema customizations can still require a store-specific query profile.
 - Shopify collections are flat in the public JSON API; navigation paths are used when available to recover hierarchy.
 - API-only Shopify collections are excluded by default when navigation or collection-sitemap visibility evidence exists. Set `include_api_only_collections=true` for catalogue audits.
 - If Shopify JSON is disabled, the worker discovers collections through navigation and sitemaps, extracts public product links from collection HTML, then normalizes JSON-LD/DOM product data.
@@ -205,7 +211,7 @@ src/ecommerce_scraper/
 
 1. Rate-controlled browser renderer for authorized JavaScript-only category pages
 2. Per-domain adapter registry for non-standard/headless storefront APIs
-3. Magento and BigCommerce adapters
+3. BigCommerce adapter and store-specific Magento query profiles
 4. Redis-backed durable job queue and resumable collection checkpoints
 5. PostgreSQL run history and CSV/XLSX export
 6. Next.js dashboard with progress and download controls

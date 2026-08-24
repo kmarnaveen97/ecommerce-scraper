@@ -3,6 +3,7 @@ import pytest
 from ecommerce_scraper.security import (
     UnsafeUrlError,
     canonicalize_url,
+    is_asset_url,
     normalize_url,
     validate_hostname_syntax,
 )
@@ -17,6 +18,13 @@ def test_canonicalize_drops_tracking_and_fragment() -> None:
         canonicalize_url("https://Example.com/products/a/?utm_source=x&size=m#reviews")
         == "https://example.com/products/a?size=m"
     )
+
+
+def test_magento_catalog_assets_are_not_product_pages() -> None:
+    assert is_asset_url(
+        "https://www.asics.co.in/media/catalog/product/1/0/1011b974_400_sr_rt_glb.jpg"
+    )
+    assert not is_asset_url("https://www.asics.co.in/novablast-5-1011b974-400.html")
 
 
 @pytest.mark.parametrize(

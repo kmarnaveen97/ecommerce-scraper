@@ -4,8 +4,10 @@ from datetime import UTC, datetime
 
 from ecommerce_scraper.adapters import (
     GenericAdapter,
+    MagentoGraphQLAdapter,
     ShopifyAdapter,
     WooCommerceAdapter,
+    probe_magento,
     probe_shopify,
 )
 from ecommerce_scraper.adapters.base import Adapter
@@ -52,17 +54,39 @@ class ScrapeService:
                         "Public Shopify catalogue APIs were detected behind a custom/headless theme"
                     )
 
+            magento_probe = None
+            if effective_platform != Platform.SHOPIFY and detection.platform in {
+                Platform.MAGENTO,
+                Platform.GENERIC,
+            }:
+                magento_probe = await probe_magento(client, final_url)
+                if magento_probe.graphql_available:
+                    effective_platform = Platform.MAGENTO
+                    if detection.platform != Platform.MAGENTO:
+                        warnings.append(
+                            "Public Magento GraphQL was detected behind a custom/headless storefront"
+                        )
+
             adapter: Adapter
             if effective_platform == Platform.SHOPIFY:
                 adapter = ShopifyAdapter(client, shopify_probe)
+            elif (
+                effective_platform == Platform.MAGENTO
+                and magento_probe
+                and magento_probe.graphql_available
+            ):
+                adapter = MagentoGraphQLAdapter(client, magento_probe)
             elif detection.platform == Platform.WOOCOMMERCE:
                 adapter = WooCommerceAdapter(client)
             else:
                 adapter = GenericAdapter(client)
-                if detection.platform not in {Platform.GENERIC, Platform.BIGCOMMERCE, Platform.MAGENTO}:
+                if detection.platform == Platform.MAGENTO and magento_probe:
+                    warnings.extend(magento_probe.warnings)
                     warnings.append(
-                        f"No dedicated {detection.platform.value} adapter; using generic discovery"
+                        "Public Magento GraphQL is unavailable; using generic discovery"
                     )
+                elif detection.platform == Platform.BIGCOMMERCE:
+                    warnings.append("No dedicated BigCommerce adapter; using generic discovery")
 
             try:
                 categories, adapter_warnings = await adapter.scrape(final_url, request, navigation)
@@ -83,7 +107,7 @@ class ScrapeService:
             site_url=final_url,
             platform=effective_platform,
             extraction_strategy=adapter.strategy,
-            category_tree=navigation,
+            category_tree=adapter.category_tree or navigation,
             categories=categories,
             warnings=warnings,
             access_report=access_report,

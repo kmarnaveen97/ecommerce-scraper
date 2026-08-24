@@ -8,7 +8,11 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 from ecommerce_scraper.models import ExtractionSource, Product, ProductVariant
-from ecommerce_scraper.security import canonicalize_url
+from ecommerce_scraper.security import canonicalize_url, is_asset_url
+
+
+class ProductEvidenceError(ValueError):
+    pass
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -143,6 +147,8 @@ def _attributes(soup: BeautifulSoup) -> dict[str, str]:
 
 
 def extract_product(html: str, page_url: str, fallback_path: list[str] | None = None) -> Product:
+    if is_asset_url(page_url):
+        raise ProductEvidenceError(f"Asset URL is not a product page: {page_url}")
     soup = BeautifulSoup(html, "lxml")
     nodes = _json_ld_nodes(soup)
     product_node = next((node for node in nodes if _type_matches(node.get("@type"), "Product")), None)
@@ -173,6 +179,9 @@ def extract_product(html: str, page_url: str, fallback_path: list[str] | None = 
             or _meta(soup, "meta[property='og:title']", "h1")
             or "Unknown product"
         )
+        name = name.strip()
+        if not name or name.lower() == "unknown product":
+            raise ProductEvidenceError(f"Structured product data has no product name: {page_url}")
         populated = sum(
             bool(value)
             for value in (
@@ -185,7 +194,7 @@ def extract_product(html: str, page_url: str, fallback_path: list[str] | None = 
             )
         )
         return Product(
-            name=name.strip(),
+            name=name,
             url=canonicalize_url(page_url),
             canonical_url=canonicalize_url(urljoin(page_url, str(canonical))),
             category_path=breadcrumb or (fallback_path or []),
@@ -214,7 +223,7 @@ def extract_product(html: str, page_url: str, fallback_path: list[str] | None = 
             confidence=min(0.65 + populated * 0.05, 0.95),
         )
 
-    name = _meta(soup, "meta[property='og:title']", "h1", "title") or "Unknown product"
+    dom_name = _meta(soup, "meta[property='og:title']", "h1", "title")
     canonical = _meta(soup, "link[rel='canonical']") or page_url
     price = _meta(
         soup,
@@ -232,14 +241,26 @@ def extract_product(html: str, page_url: str, fallback_path: list[str] | None = 
         "[class*='product-description']",
     )
     image = _meta(soup, "meta[property='og:image']", "[itemprop='image']")
+    sku = _meta(soup, "[itemprop='sku']", "[class*='sku']")
+    strong_dom_evidence = bool(
+        price
+        or sku
+        or soup.select_one(
+            "[itemtype*='schema.org/Product'], [data-product-id], "
+            "[class*='add-to-cart'], [class*='add_to_cart'], "
+            "meta[property^='product:']"
+        )
+    )
+    if not dom_name or not dom_name.strip() or not strong_dom_evidence:
+        raise ProductEvidenceError(f"Page does not contain minimum product evidence: {page_url}")
     return Product(
-        name=name,
+        name=dom_name.strip(),
         url=canonicalize_url(page_url),
         canonical_url=canonicalize_url(urljoin(page_url, canonical)),
         category_path=breadcrumb or (fallback_path or []),
         description=description,
         brand=_meta(soup, "[itemprop='brand']", "meta[property='product:brand']"),
-        sku=_meta(soup, "[itemprop='sku']", "[class*='sku']"),
+        sku=sku,
         price=price,
         currency=currency,
         availability=_availability(_meta(soup, "[itemprop='availability']")),
